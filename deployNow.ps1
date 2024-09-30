@@ -4,8 +4,8 @@
 
 param (
     [Parameter(Mandatory = $true, Position = 0, HelpMessage = "The subscription ID for the deployment.")]
-    [ValidateSet('tenant','sub')]
-    [string]$targetScope,
+    [ValidateSet('tenant', 'mg', 'group','sub')]
+    [string]$targetScope = 'sub',
 
     [Parameter(Mandatory = $true, Position = 1, HelpMessage = "The subscription ID for the deployment.")]
     [string]$subscriptionId,
@@ -34,7 +34,6 @@ param (
 )
 
 $scriptVersion = '1.0'
-
 Write-Output "Azure Bicep Deployment Wrapper [$scriptVersion]"
 
 # Bicep Variables
@@ -42,7 +41,7 @@ $deployGuid = (New-Guid).Guid
 
 # Import PowerShell Function Scripts
 Write-Output "> Importing PowerShell Function Script"
-Get-ChildItem -Path $PSScriptRoot\scripts -Filter *.ps1 | ForEach-Object {
+Get-ChildItem -Path $PSScriptRoot\pwshModules -Filter *.ps1 | ForEach-Object {
     . $_.FullName
 }
 
@@ -53,22 +52,25 @@ if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
 }
 
 # Check Azure Bicep Version
-$azBicepVersion = az bicep version
-Write-Output "> Azure Bicep Version: $($azBicepVersion)"
+$azBicepVersion = az bicep version --only-show-errors
+Write-Output `r "> Azure Bicep Version: $($azBicepVersion)"
 
 # Log into Azure
 Write-Output "> Logging into Azure for $subscriptionId"
-az config set core.login_experience_v2=off
-#az login --use-device-code --output none
-$azUserAccount = az ad signed-in-user show | ConvertFrom-Json | ConvertTo-Json
+az config set core.login_experience_v2=off --only-show-errors
+$azUserAccountId = az ad signed-in-user show --query 'id' -o tsv
 
 Write-Output "> Setting subscription to $subscriptionId"
 az account set --subscription $subscriptionId
 
 # Functions
-$iacEntraIdGroup = ''
-checkAzPermissions -targetScope $targetScope -subscriptionId $subscriptionId -azUserAccountContext $azUserAccount -entraIdGroupName $iacEntraIdGroup
-checkRegionCapacity
+# NOTE: $iacEntraIdGroup is required for tenant level deployments, Please add user BEFORE deploying.
+$iacTenantEntraIdGroupObjectId = '48fc6f15-758b-4528-9bf1-f4cf69bab83f' #sec-bicep-iac-deployment-rw
+$iacSubscriptionEntraIdGroupObjectId = '5c8ce689-ec1d-4566-af24-1623ce59676d' # sec-builtwithcaffeine-azure-prod-owner | Members
+Invoke-AzUserPermissionCheck -targetScope $targetScope -entraIdTenantGroupId $iacTenantEntraIdGroupObjectId -entraIdSubscriptionGroupId $iacSubscriptionEntraIdGroupObjectId -azUserAccountId $azUserAccountId
+
+#checkAzPermissions -targetScope $targetScope -subscriptionId $subscriptionId -azUserAccountContext $azUserAccount -entraIdGroupName $iacEntraIdGroup
+#checkRegionCapacity
 
 Write-Output `r "Pre Flight Variable Validation"
 Write-Output "Deployment Guid......: $deployGuid"
@@ -80,7 +82,10 @@ Write-Output "Project Name.........: $projectName"
 
 if ($deploy) {
     $deployStartTime = Get-Date -Format 'HH:mm:ss'
-    Write-Output `r "> Deployment [iac-bicep-$deployGuid] Started at $deployStartTime"
+
+    # Deploy Bicep Template
+    $azDeployGuidLink = "`e]8;;https://portal.azure.com/#view/HubsExtension/DeploymentDetailsBlade/~/overview/id/%2Fsubscriptions%2F$subscriptionId%2Fproviders%2FMicrosoft.Resources%2Fdeployments%2Fiac-bicep-$deployGuid`e\iac-bicep-$deployGuid`e]8;;`e\"
+    Write-Output `r "> Deployment [$azDeployGuidLink] Started at $deployStartTime"
 
     az deployment $targetScope create `
         --name iac-bicep-$deployGuid `
@@ -88,7 +93,7 @@ if ($deploy) {
         --template-file ./main.bicep `
         --parameters `
         deployGuid=$deployGuid `
-        deployedBy=$($azUserAccount.user.name) `
+        deployedBy=$azUserAccountId `
         subscriptionId=$subscriptionId `
         location=$location `
         locationShortCode=$($locationShortCodes.$location) `
@@ -99,6 +104,6 @@ if ($deploy) {
         --output none
 
     $deployEndTime = Get-Date -Format 'HH:mm:ss'
-    $timeDifference = New-TimeSpan -Start $deployStartTime -End $deployEndTime ;  $deploymentDuration = "{0:hh\:mm\:ss}"-f $timeDifference
+    $timeDifference = New-TimeSpan -Start $deployStartTime -End $deployEndTime ; $deploymentDuration = "{0:hh\:mm\:ss}" -f $timeDifference
     Write-Output "> Deployment [iac-bicep-$deployGuid] Started at $deployEndTime - Deployment Duration: $deploymentDuration"
 }
