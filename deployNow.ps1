@@ -65,9 +65,10 @@ az account set --subscription $subscriptionId
 
 # Functions
 # NOTE: $iacEntraIdGroup is required for tenant level deployments, Please add user BEFORE deploying.
-$iacTenantEntraIdGroupObjectId = '48fc6f15-758b-4528-9bf1-f4cf69bab83f' #sec-bicep-iac-deployment-rw
-$iacSubscriptionEntraIdGroupObjectId = '5c8ce689-ec1d-4566-af24-1623ce59676d' # sec-builtwithcaffeine-azure-prod-owner | Members
-Invoke-AzUserPermissionCheck -targetScope $targetScope -entraIdTenantGroupId $iacTenantEntraIdGroupObjectId -entraIdSubscriptionGroupId $iacSubscriptionEntraIdGroupObjectId -azUserAccountId $azUserAccountId
+# NOTE: $iacEntraIdSubscriptionGroup is required for subscription level deployments, Please add user BEFORE deploying.
+$entraIdTenantGroupId = '48fc6f15-758b-4528-9bf1-f4cf69bab83f' #sec-bicep-iac-deployment-rw
+$entraIdSubscriptionGroupId = '5c8ce689-ec1d-4566-af24-1623ce59676d' # sec-builtwithcaffeine-azure-prod-owner | Members
+Invoke-AzUserPermissionCheck -targetScope $targetScope -entraIdTenantGroupId $entraIdTenantGroupId -entraIdSubscriptionGroupId $entraIdSubscriptionGroupId -azUserAccountId $azUserAccountId
 
 #checkAzPermissions -targetScope $targetScope -subscriptionId $subscriptionId -azUserAccountContext $azUserAccount -entraIdGroupName $iacEntraIdGroup
 #checkRegionCapacity
